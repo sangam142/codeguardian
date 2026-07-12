@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CodeGuardian — Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          heading: ['"Instrument Serif"', 'serif'],
+          body: ['Barlow', 'sans-serif'],
+        },
+        borderRadius: { DEFAULT: '9999px' },
+      },
+    },
+  };
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #000; }
+
+  .liquid-glass {
+    background: rgba(255,255,255,0.01);
+    background-blend-mode: luminosity;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: none;
+    box-shadow: inset 0 1px 1px rgba(255,255,255,0.1);
+    position: relative;
+    overflow: hidden;
+  }
+  .liquid-glass::before {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    padding: 1.4px;
+    background: linear-gradient(180deg,
+      rgba(255,255,255,0.45) 0%,
+      rgba(255,255,255,0.15) 20%,
+      rgba(255,255,255,0) 40%,
+      rgba(255,255,255,0) 60%,
+      rgba(255,255,255,0.15) 80%,
+      rgba(255,255,255,0.45) 100%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  .liquid-glass-strong {
+    background: rgba(255,255,255,0.01);
+    background-blend-mode: luminosity;
+    backdrop-filter: blur(50px);
+    -webkit-backdrop-filter: blur(50px);
+    border: none;
+    box-shadow: 4px 4px 4px rgba(0,0,0,0.05), inset 0 1px 1px rgba(255,255,255,0.15);
+    position: relative;
+    overflow: hidden;
+  }
+  .liquid-glass-strong::before {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    padding: 1.4px;
+    background: linear-gradient(180deg,
+      rgba(255,255,255,0.5) 0%,
+      rgba(255,255,255,0.2) 20%,
+      rgba(255,255,255,0) 40%,
+      rgba(255,255,255,0) 60%,
+      rgba(255,255,255,0.2) 80%,
+      rgba(255,255,255,0.5) 100%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* Chart tokens — series colors validated on the near-black surface.
+     Text always wears ink tokens, never a series color. */
+  :root {
+    --health: #3987e5;
+    --sev-critical: #d03b3b;
+    --sev-high: #ec835a;
+    --sev-medium: #fab219;
+    --sev-low: #a3a29a;
+    --sev-info: #63625c;
+    --grid: rgba(255,255,255,0.08);
+    --axis: rgba(255,255,255,0.18);
+    --surface-ring: #0a0a0a;
+    --ink: #ffffff;
+    --ink-2: rgba(255,255,255,0.75);
+    --ink-3: rgba(255,255,255,0.55);
+  }
+  .tick-num { font-variant-numeric: tabular-nums; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/framer-motion@11.11.17/dist/framer-motion.js"></script>
+<script>
+  // The UMD build already registers itself as window.Motion; keep the spec's
+  // alias without clobbering it if a future build uses window.FramerMotion.
+  window.Motion = window.FramerMotion || window.Motion;
+  // Framer Motion dev-build list-key warnings are benign here — filter them.
+  (function () {
+    const err = console.error;
+    console.error = function (...args) {
+      if (typeof args[0] === "string" && args[0].includes('unique "key"')) return;
+      err.apply(console, args);
+    };
+  })();
+</script>
+</head>
+<body class="bg-black text-white font-body antialiased">
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+/* ---------- shared: icons, FadingVideo, BlurText, hooks ---------- */
+const { motion } = window.Motion;
+
+const ArrowUpRight = ({ className = "h-4 w-4" }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M7 17L17 7" /><path d="M7 7h10v10" />
+  </svg>
+);
+const PlayIcon = ({ className = "h-4 w-4" }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="6 4 20 12 6 20 6 4" />
+  </svg>
+);
+const ClockIcon = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white"
+       strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+  </svg>
+);
+const GlobeIcon = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white"
+       strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18" />
+    <path d="M12 3c2.5 2.6 3.8 5.6 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
+  </svg>
+);
+// Material icon glyphs for the analytics cards (fill currentColor).
+const MaterialIcon = ({ d }) => (
+  <svg className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+    <path d={d} />
+  </svg>
+);
+const ICON_TREND = "M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z";
+const ICON_SHIELD = "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z";
+const ICON_BARS = "M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z";
+const ICON_LIST = "M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z";
+
+const FADE_MS = 500;
+const FADE_OUT_LEAD = 0.55;
+
+function FadingVideo({ src, className, style }) {
+  const videoRef = React.useRef(null);
+  const rafRef = React.useRef(null);
+  const fadingOutRef = React.useRef(false);
+
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const fadeTo = (target, duration = FADE_MS) => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      const from = parseFloat(video.style.opacity || "0");
+      const start = performance.now();
+      const step = (now) => {
+        const t = Math.min(1, (now - start) / duration);
+        video.style.opacity = String(from + (target - from) * t);
+        if (t < 1) rafRef.current = requestAnimationFrame(step);
+      };
+      rafRef.current = requestAnimationFrame(step);
+    };
+
+    const onLoaded = () => {
+      video.style.opacity = "0";
+      video.play().catch(() => {});
+      fadeTo(1);
+    };
+    const onTime = () => {
+      if (!fadingOutRef.current && video.duration &&
+          video.duration - video.currentTime <= FADE_OUT_LEAD &&
+          video.duration - video.currentTime > 0) {
+        fadingOutRef.current = true;
+        fadeTo(0);
+      }
+    };
+    const onEnded = () => {
+      video.style.opacity = "0";
+      setTimeout(() => {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+        fadingOutRef.current = false;
+        fadeTo(1);
+      }, 100);
+    };
+
+    video.addEventListener("loadeddata", onLoaded);
+    video.addEventListener("timeupdate", onTime);
+    video.addEventListener("ended", onEnded);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      video.removeEventListener("loadeddata", onLoaded);
+      video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("ended", onEnded);
+    };
+  }, [src]);
+
+  return (
+    <video ref={videoRef} src={src} className={className}
+           style={{ opacity: 0, ...style }}
+           autoPlay muted playsInline preload="auto" />
+  );
+}
+window.FadingVideo = FadingVideo;
+
+function BlurText({ text, className }) {
+  const ref = React.useRef(null);
+  const [visible, setVisible] = React.useState(false);
+  React.useEffect(() => {
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) { setVisible(true); obs.disconnect(); }
+      },
+      { threshold: 0.1 }
+    );
+    if (ref.current) obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, []);
+  const words = text.split(" ");
+  return (
+    <p ref={ref} className={className}
+       style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", rowGap: "0.1em" }}>
+      {words.map((w, i) => (
+        <motion.span
+          key={i}
+          initial={{ filter: "blur(10px)", opacity: 0, y: 50 }}
+          animate={visible ? {
+            filter: ["blur(10px)", "blur(5px)", "blur(0px)"],
+            opacity: [0, 0.5, 1],
+            y: [50, -5, 0],
+          } : {}}
+          transition={{ duration: 0.7, times: [0, 0.5, 1], ease: "easeOut",
+                        delay: (i * 100) / 1000 }}
+          style={{ display: "inline-block", marginRight: "0.28em" }}>
+          {w}
+        </motion.span>
+      ))}
+    </p>
+  );
+}
+window.BlurText = BlurText;
+
+// Width of a container, for pixel-perfect (non-scaled) SVG charts.
+function useSize() {
+  const ref = React.useRef(null);
+  const [w, setW] = React.useState(0);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setW(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w];
+}
+window.useSize = useSize;
+
+const fadeUp = (delay) => ({
+  initial: { filter: "blur(10px)", opacity: 0, y: 20 },
+  animate: { filter: "blur(0px)", opacity: 1, y: 0 },
+  transition: { duration: 0.8, ease: "easeOut", delay },
+});
+window.fadeUp = fadeUp;
+
+const fmtDate = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d)) return iso || "";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+window.fmtDate = fmtDate;
+const fmtNum = (n) => (n == null ? "—" : Number(n).toLocaleString());
+window.fmtNum = fmtNum;
+</script>
+
+<script type="text/babel" data-presets="react">
+/* ---------- charts (SVG, hand-rolled) ---------- */
+const SEVERITIES = [
+  { key: "critical", label: "Critical", color: "var(--sev-critical)" },
+  { key: "high",     label: "High",     color: "var(--sev-high)" },
+  { key: "medium",   label: "Medium",   color: "var(--sev-medium)" },
+  { key: "low",      label: "Low",      color: "var(--sev-low)" },
+  { key: "info",     label: "Info",     color: "var(--sev-info)" },
+];
+window.SEVERITIES = SEVERITIES;
+
+// Round a max value up to a clean axis ceiling (1/2/5 × 10^k).
+function niceCeil(v) {
+  if (v <= 4) return Math.max(4, v);
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 5, 10]) if (v <= m * mag) return m * mag;
+  return 10 * mag;
+}
+
+function Tooltip({ x, y, children }) {
+  return (
+    <div className="pointer-events-none absolute z-20 liquid-glass rounded-[0.75rem] px-3 py-2 text-xs"
+         style={{ left: x, top: y, transform: "translate(-50%, calc(-100% - 10px))",
+                  background: "rgba(8,8,8,0.85)", minWidth: "140px" }}>
+      {children}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex-1 flex items-center justify-center min-h-[180px]">
+      <p className="text-sm text-white/60 text-center max-w-[36ch] font-light">
+        No reviews recorded yet. Press <span className="text-white">Run Demo Scan</span>{" "}
+        or run <code className="text-white/90">python -m app.harness sample_vulnerable_code</code>.
+      </p>
+    </div>
+  );
+}
+
+/* Health score over time — single series line + 10% area wash. */
+function HealthChart({ reviews }) {
+  const [wrapRef, width] = useSize();
+  const [hover, setHover] = React.useState(null);
+  const svgRef = React.useRef(null);
+  const n = reviews.length;
+  const H = 250, PAD = { t: 14, r: 64, b: 32, l: 40 };
+  const w = Math.max(width, 300);
+  const plotW = w - PAD.l - PAD.r, plotH = H - PAD.t - PAD.b;
+  const X = (i) => PAD.l + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2);
+  const Y = (v) => PAD.t + (1 - v / 100) * plotH;
+
+  if (!n) return <div ref={wrapRef}><EmptyState /></div>;
+
+  const pts = reviews.map((r, i) => [X(i), Y(r.health_score)]);
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("");
+  const area = `${line}L${pts[n - 1][0].toFixed(1)},${Y(0)}L${pts[0][0].toFixed(1)},${Y(0)}Z`;
+  const tickIdx = n <= 4 ? pts.map((_, i) => i)
+    : [0, Math.floor((n - 1) / 3), Math.floor(2 * (n - 1) / 3), n - 1];
+  const last = reviews[n - 1];
+
+  const locate = (e) => {
+    const rect = svgRef.current.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    let best = 0, bd = Infinity;
+    pts.forEach((p, i) => { const d = Math.abs(p[0] - px); if (d < bd) { bd = d; best = i; } });
+    setHover(best);
+  };
+  const onKey = (e) => {
+    if (e.key === "ArrowRight") { setHover((h) => Math.min(n - 1, (h == null ? n - 1 : h + 1))); e.preventDefault(); }
+    if (e.key === "ArrowLeft")  { setHover((h) => Math.max(0, (h == null ? n - 1 : h - 1))); e.preventDefault(); }
+    if (e.key === "Escape") setHover(null);
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <svg ref={svgRef} width={w} height={H} role="img" tabIndex="0" className="outline-none"
+           aria-label="Code-health score per review, 0 to 100"
+           onPointerMove={locate} onPointerLeave={() => setHover(null)}
+           onKeyDown={onKey} onBlur={() => setHover(null)}>
+        {[0, 25, 50, 75, 100].map((v) => (
+          <g key={v}>
+            <line x1={PAD.l} x2={w - PAD.r} y1={Y(v)} y2={Y(v)} stroke="var(--grid)" strokeWidth="1" />
+            <text x={PAD.l - 8} y={Y(v) + 4} textAnchor="end" fontSize="11"
+                  fill="var(--ink-3)" className="tick-num">{v}</text>
+          </g>
+        ))}
+        <line x1={PAD.l} x2={w - PAD.r} y1={Y(0)} y2={Y(0)} stroke="var(--axis)" strokeWidth="1" />
+        {tickIdx.map((i) => (
+          <text key={i} x={X(i)} y={H - 10} textAnchor="middle" fontSize="11"
+                fill="var(--ink-3)" className="tick-num">{fmtDate(reviews[i].created_at)}</text>
+        ))}
+        <path d={area} fill="var(--health)" opacity="0.1" />
+        <path d={line} fill="none" stroke="var(--health)" strokeWidth="2"
+              strokeLinejoin="round" strokeLinecap="round" />
+        {hover != null && (
+          <line x1={pts[hover][0]} x2={pts[hover][0]} y1={PAD.t} y2={Y(0)}
+                stroke="var(--axis)" strokeWidth="1" />
+        )}
+        {hover != null && (
+          <circle cx={pts[hover][0]} cy={pts[hover][1]} r="5" fill="var(--health)"
+                  stroke="var(--surface-ring)" strokeWidth="2" />
+        )}
+        <circle cx={pts[n - 1][0]} cy={pts[n - 1][1]} r="4.5" fill="var(--health)"
+                stroke="var(--surface-ring)" strokeWidth="2" />
+        <text x={pts[n - 1][0] + 10} y={pts[n - 1][1] + 4} fontSize="12"
+              fontWeight="600" fill="var(--ink)">{last.health_score}</text>
+      </svg>
+      {hover != null && (
+        <Tooltip x={Math.min(Math.max(pts[hover][0], 80), w - 80)} y={pts[hover][1]}>
+          <div className="text-sm font-semibold text-white">
+            {reviews[hover].health_score}<span className="text-white/50 font-normal"> /100</span>
+          </div>
+          <div className="text-white/60 mt-0.5">{fmtDate(reviews[hover].created_at)}</div>
+          <div className="flex items-center gap-1.5 mt-1 text-white/75">
+            <span style={{ background: "var(--health)", width: 10, height: 2, display: "inline-block" }} />
+            Health score
+          </div>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+window.HealthChart = HealthChart;
+
+/* Finding counts by severity per review — stacked columns, status tokens. */
+function SeverityChart({ reviews }) {
+  const [wrapRef, width] = useSize();
+  const [hover, setHover] = React.useState(null);
+  const n = reviews.length;
+  const H = 250, PAD = { t: 14, r: 12, b: 32, l: 40 };
+  const w = Math.max(width, 300);
+  const plotW = w - PAD.l - PAD.r, plotH = H - PAD.t - PAD.b;
+
+  if (!n) return <div ref={wrapRef}><EmptyState /></div>;
+
+  const maxTotal = niceCeil(Math.max(...reviews.map((r) => r.total || 0)));
+  const band = plotW / n;
+  const barW = Math.max(3, Math.min(24, band * 0.66));
+  const Y = (v) => PAD.t + (1 - v / maxTotal) * plotH;
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(maxTotal * f));
+  const tickIdx = n <= 4 ? reviews.map((_, i) => i)
+    : [0, Math.floor((n - 1) / 3), Math.floor(2 * (n - 1) / 3), n - 1];
+
+  const topRound = (x, y, wd, h, r) => {
+    r = Math.min(r, wd / 2, h);
+    return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + wd - r}Q${x + wd},${y} ${x + wd},${y + r}V${y + h}Z`;
+  };
+
+  const columns = reviews.map((r, i) => {
+    const x = PAD.l + i * band + (band - barW) / 2;
+    const segs = [];
+    let cum = 0;
+    const present = SEVERITIES.filter((s) => (r[s.key] || 0) > 0);
+    present.forEach((s, k) => {
+      const v = r[s.key] || 0;
+      const y0 = Y(cum), y1 = Y(cum + v);
+      const isTop = k === present.length - 1;
+      const gap = isTop ? 0 : 2; // 2px surface gap between touching segments
+      segs.push({ ...s, v, x, y: y1, h: Math.max(1, (y0 - y1) - gap), isTop });
+      cum += v;
+    });
+    return { x, segs, review: r, i };
+  });
+
+  const onKey = (e) => {
+    if (e.key === "ArrowRight") { setHover((h) => Math.min(n - 1, (h == null ? n - 1 : h + 1))); e.preventDefault(); }
+    if (e.key === "ArrowLeft")  { setHover((h) => Math.max(0, (h == null ? n - 1 : h - 1))); e.preventDefault(); }
+    if (e.key === "Escape") setHover(null);
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <svg width={w} height={H} role="img" tabIndex="0" className="outline-none"
+           aria-label="Finding counts per review, stacked by severity"
+           onPointerLeave={() => setHover(null)} onKeyDown={onKey} onBlur={() => setHover(null)}>
+        {yTicks.map((v) => (
+          <g key={v}>
+            <line x1={PAD.l} x2={w - PAD.r} y1={Y(v)} y2={Y(v)} stroke="var(--grid)" strokeWidth="1" />
+            <text x={PAD.l - 8} y={Y(v) + 4} textAnchor="end" fontSize="11"
+                  fill="var(--ink-3)" className="tick-num">{fmtNum(v)}</text>
+          </g>
+        ))}
+        <line x1={PAD.l} x2={w - PAD.r} y1={Y(0)} y2={Y(0)} stroke="var(--axis)" strokeWidth="1" />
+        {tickIdx.map((i) => (
+          <text key={i} x={PAD.l + i * band + band / 2} y={H - 10} textAnchor="middle"
+                fontSize="11" fill="var(--ink-3)" className="tick-num">
+            {fmtDate(reviews[i].created_at)}
+          </text>
+        ))}
+        {columns.map((c) => (
+          <g key={c.i} style={{ filter: hover === c.i ? "brightness(1.25)" : "none" }}>
+            {c.segs.map((s, k) =>
+              s.isTop
+                ? <path key={k} d={topRound(s.x, s.y, barW, s.h, 4)} fill={s.color} />
+                : <rect key={k} x={s.x} y={s.y} width={barW} height={s.h} fill={s.color} />
+            )}
+          </g>
+        ))}
+        {/* hit targets: full column height, at least 24px wide */}
+        {columns.map((c) => {
+          const hitW = Math.max(band, 24);
+          return (
+            <rect key={c.i} x={PAD.l + c.i * band + (band - hitW) / 2} y={PAD.t}
+                  width={hitW} height={plotH} fill="transparent"
+                  onPointerMove={() => setHover(c.i)} />
+          );
+        })}
+      </svg>
+      {hover != null && (
+        <Tooltip x={Math.min(Math.max(PAD.l + hover * band + band / 2, 90), w - 90)} y={PAD.t + 8}>
+          <div className="text-sm font-semibold text-white">
+            {fmtNum(reviews[hover].total)} finding{reviews[hover].total === 1 ? "" : "s"}
+          </div>
+          <div className="text-white/60 mt-0.5 mb-1">{fmtDate(reviews[hover].created_at)}</div>
+          {SEVERITIES.map((s) => (
+            <div key={s.key} className="flex items-center justify-between gap-4">
+              <span className="flex items-center gap-1.5 text-white/75">
+                <span style={{ background: s.color, width: 10, height: 2, display: "inline-block" }} />
+                {s.label}
+              </span>
+              <span className="text-white font-semibold tick-num">{reviews[hover][s.key] || 0}</span>
+            </div>
+          ))}
+        </Tooltip>
+      )}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 px-1">
+        {SEVERITIES.map((s) => (
+          <span key={s.key} className="flex items-center gap-1.5 text-xs text-white/75">
+            <span style={{ background: s.color, width: 10, height: 10, borderRadius: 2, display: "inline-block" }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+window.SeverityChart = SeverityChart;
+
+/* Findings by agent — one series, one hue, value at the bar tip. */
+function AgentChart({ reviews }) {
+  const [wrapRef, width] = useSize();
+  const [hover, setHover] = React.useState(null);
+  const totals = {};
+  reviews.forEach((r) => {
+    Object.entries(r.agents || {}).forEach(([a, v]) => { totals[a] = (totals[a] || 0) + v; });
+  });
+  const rows = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+
+  if (!rows.length) return <div ref={wrapRef}><EmptyState /></div>;
+
+  const w = Math.max(width, 260);
+  const labelW = 108, valueW = 52, rowH = 40, barH = 14;
+  const H = rows.length * rowH + 8;
+  const plotW = w - labelW - valueW;
+  const maxV = niceCeil(rows[0][1]);
+  const rightRound = (x, y, wd, h, r) => {
+    r = Math.min(r, h / 2, Math.max(0.1, wd));
+    return `M${x},${y}H${x + wd - r}Q${x + wd},${y} ${x + wd},${y + r}V${y + h - r}Q${x + wd},${y + h} ${x + wd - r},${y + h}H${x}Z`;
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <svg width={w} height={H} role="img" aria-label="Total findings by agent in the selected range">
+        {rows.map(([agent, v], i) => {
+          const y = 8 + i * rowH;
+          const bw = Math.max(2, (v / maxV) * plotW);
+          return (
+            <g key={agent} opacity={hover == null || hover === i ? 1 : 0.6}>
+              <text x={labelW - 10} y={y + barH / 2 + 4} textAnchor="end" fontSize="12"
+                    fill="var(--ink-2)">{agent}</text>
+              <path d={rightRound(labelW, y, bw, barH, 4)} fill="var(--health)" />
+              <text x={labelW + bw + 8} y={y + barH / 2 + 4} fontSize="12" fontWeight="600"
+                    fill="var(--ink)">{fmtNum(v)}</text>
+              <rect x="0" y={y - (rowH - barH) / 2} width={w} height={rowH} fill="transparent"
+                    onPointerMove={() => setHover(i)} onPointerLeave={() => setHover(null)} />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+window.AgentChart = AgentChart;
+
+/* Recent reviews — the table-view twin of every chart above. */
+function ReviewTable({ reviews }) {
+  const rows = [...reviews].reverse().slice(0, 12);
+  if (!rows.length) return <EmptyState />;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm font-body">
+        <thead>
+          <tr className="text-left text-[11px] uppercase tracking-wider text-white/50">
+            <th className="py-2 pr-4 font-medium">Time</th>
+            <th className="py-2 pr-4 font-medium">Source</th>
+            <th className="py-2 pr-4 font-medium">Target</th>
+            <th className="py-2 pr-3 font-medium text-right">Crit</th>
+            <th className="py-2 pr-3 font-medium text-right">High</th>
+            <th className="py-2 pr-3 font-medium text-right">Med</th>
+            <th className="py-2 pr-3 font-medium text-right">Low</th>
+            <th className="py-2 pr-3 font-medium text-right">Info</th>
+            <th className="py-2 font-medium text-right">Health</th>
+          </tr>
+        </thead>
+        <tbody className="tick-num">
+          {rows.map((r) => (
+            <tr key={r.id} className="border-t border-white/10 text-white/80">
+              <td className="py-2 pr-4 whitespace-nowrap">{fmtDate(r.created_at)}</td>
+              <td className="py-2 pr-4">{r.source}</td>
+              <td className="py-2 pr-4 max-w-[220px] truncate" title={r.repo || ""}>
+                {r.repo}{r.pr_number ? ` #${r.pr_number}` : ""}
+              </td>
+              <td className="py-2 pr-3 text-right">{r.critical}</td>
+              <td className="py-2 pr-3 text-right">{r.high}</td>
+              <td className="py-2 pr-3 text-right">{r.medium}</td>
+              <td className="py-2 pr-3 text-right">{r.low}</td>
+              <td className="py-2 pr-3 text-right">{r.info}</td>
+              <td className="py-2 text-right font-semibold text-white">{r.health_score}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+window.ReviewTable = ReviewTable;
+</script>
+
+<script type="text/babel" data-presets="react">
+/* ---------- page sections ---------- */
+const HERO_VIDEO = "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260418_080021_d598092b-c4c2-4e53-8e46-94cf9064cd50.mp4";
+const CAPS_VIDEO = "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260418_094631_d30ab262-45ee-4b7d-99f3-5d5848c8ef13.mp4";
+
+function Navbar({ onScan, scanning }) {
+  const links = [
+    ["Home", "#hero"], ["Analytics", "#analytics"], ["Reviews", "#reviews"],
+    ["Agents", "#agents"], ["API Docs", "/docs"],
+  ];
+  return (
+    <nav className="fixed top-4 left-0 right-0 z-50 px-8 lg:px-16 flex items-center justify-between">
+      <div className="liquid-glass rounded-full w-12 h-12 flex items-center justify-center">
+        <span className="font-heading italic text-2xl text-white">c</span>
+      </div>
+      <div className="hidden md:flex items-center liquid-glass rounded-full px-1.5 py-1.5">
+        {links.map(([label, href]) => (
+          <a key={label} href={href}
+             className="px-3 py-2 text-sm font-medium text-white/90 font-body">{label}</a>
+        ))}
+        <button onClick={onScan} disabled={scanning}
+                className="flex items-center gap-1.5 bg-white text-black rounded-full px-4 py-2 text-sm font-semibold whitespace-nowrap disabled:opacity-60">
+          {scanning ? "Scanning…" : "Run Demo Scan"} <ArrowUpRight className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="w-12 h-12 invisible" />
+    </nav>
+  );
+}
+
+function Hero({ summary, onScan, scanning }) {
+  const health = summary && summary.latest_health != null ? summary.latest_health : null;
+  const findings = summary ? summary.findings : null;
+  const reviews = summary ? summary.reviews : null;
+  return (
+    <section id="hero" className="relative h-screen overflow-hidden bg-black">
+      <FadingVideo src={HERO_VIDEO}
+                   className="absolute left-1/2 top-0 -translate-x-1/2 object-cover object-top z-0"
+                   style={{ width: "120%", height: "120%" }} />
+      <div className="relative z-10 flex flex-col h-full">
+        <Navbar onScan={onScan} scanning={scanning} />
+        <div className="flex-1 flex flex-col items-center justify-center text-center pt-24 px-4">
+          <motion.div {...fadeUp(0.4)}
+                      className="liquid-glass rounded-full flex items-center gap-3 pl-1.5 py-1.5 pr-3">
+            <span className="bg-white text-black rounded-full px-3 py-1 text-xs font-semibold">Live</span>
+            <span className="text-sm text-white/90">
+              One Supervisor · Four Specialist Agents on Every PR
+            </span>
+          </motion.div>
+          <div className="mt-6">
+            <BlurText text="Guard Every Line Across the Codebase"
+                      className="text-6xl md:text-7xl lg:text-[5.5rem] font-heading italic text-white leading-[0.8] max-w-2xl justify-center tracking-[-4px]" />
+          </div>
+          <motion.p {...fadeUp(0.8)}
+                    className="mt-4 text-sm md:text-base text-white max-w-2xl font-body font-light leading-tight">
+            Deterministic scanners find the issues; specialist agents rank them and an
+            optional LLM explains the risk. Every pull request becomes one ranked
+            report and one code-health score — secure and explainable.
+          </motion.p>
+          <motion.div {...fadeUp(1.1)} className="flex items-center gap-6 mt-6">
+            <button onClick={onScan} disabled={scanning}
+                    className="liquid-glass-strong rounded-full px-5 py-2.5 text-sm font-medium text-white flex items-center gap-2 disabled:opacity-60">
+              {scanning ? "Scanning…" : "Run Demo Scan"} <ArrowUpRight className="h-5 w-5" />
+            </button>
+            <a href="#analytics" className="flex items-center gap-2 text-sm font-medium text-white">
+              View Analytics <PlayIcon className="h-4 w-4" />
+            </a>
+          </motion.div>
+          <motion.div {...fadeUp(1.3)} className="flex items-stretch gap-4 mt-8">
+            <div className="liquid-glass p-5 w-[220px] rounded-[1.25rem] flex flex-col items-start gap-6 text-left">
+              <ClockIcon />
+              <div>
+                <div className="font-heading italic text-white text-4xl tracking-[-1px] leading-none">
+                  {health == null ? "—" : `${health}/100`}
+                </div>
+                <div className="text-xs text-white font-body font-light mt-2">
+                  Latest Code-Health Score
+                </div>
+              </div>
+            </div>
+            <div className="liquid-glass p-5 w-[220px] rounded-[1.25rem] flex flex-col items-start gap-6 text-left">
+              <GlobeIcon />
+              <div>
+                <div className="font-heading italic text-white text-4xl tracking-[-1px] leading-none">
+                  {findings == null ? "—" : fmtNum(findings)}
+                </div>
+                <div className="text-xs text-white font-body font-light mt-2">
+                  Findings Across {reviews == null ? "…" : fmtNum(reviews)} Reviews
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+        <motion.div id="agents" {...fadeUp(1.4)} className="flex flex-col items-center gap-4 pb-8">
+          <span className="liquid-glass rounded-full px-3.5 py-1 text-xs font-medium text-white">
+            One supervisor routing findings from four specialist agents
+          </span>
+          <div className="flex items-center gap-12 md:gap-16">
+            {["Security", "Quality", "Test-Gap", "Docs", "Supervisor"].map((n) => (
+              <span key={n} className="font-heading italic text-white text-2xl md:text-3xl tracking-tight">{n}</span>
+            ))}
+          </div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+window.Hero = Hero;
+
+function ChartCard({ icon, tags, title, wide, id, children }) {
+  return (
+    <div id={id} className={`liquid-glass rounded-[1.25rem] p-6 flex flex-col ${wide || ""}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="liquid-glass rounded-[0.75rem] w-11 h-11 flex items-center justify-center shrink-0">
+          <MaterialIcon d={icon} />
+        </div>
+        <div className="flex flex-wrap justify-end gap-1.5 max-w-[70%]">
+          {tags.map((t) => (
+            <span key={t} className="liquid-glass rounded-full px-3 py-1 text-[11px] text-white/90 font-body whitespace-nowrap">{t}</span>
+          ))}
+        </div>
+      </div>
+      <h3 className="font-heading italic text-white text-3xl tracking-[-1px] leading-none mt-6">{title}</h3>
+      <div className="mt-4 flex-1 flex flex-col justify-end">{children}</div>
+    </div>
+  );
+}
+
+function Analytics({ reviews, range, setRange }) {
+  return (
+    <section id="analytics" className="relative min-h-screen bg-black overflow-hidden">
+      <FadingVideo src={CAPS_VIDEO} className="absolute inset-0 w-full h-full object-cover z-0" />
+      <div className="relative z-10 px-8 md:px-16 lg:px-20 pt-24 pb-10 flex flex-col min-h-screen">
+        <div className="mb-auto">
+          <p className="text-sm font-body text-white/80 mb-6">// Analytics</p>
+          <h2 className="font-heading italic text-white text-6xl md:text-7xl lg:text-[6rem] leading-[0.9] tracking-[-3px]">
+            Reviews<br />evolved
+          </h2>
+        </div>
+
+        {/* one filter row, above everything it scopes */}
+        <div className="flex items-center gap-2 mt-12">
+          {[20, 50, 100].map((v) => (
+            <button key={v} onClick={() => setRange(v)}
+                    className={`rounded-full px-4 py-1.5 text-xs font-medium ${
+                      range === v ? "bg-white text-black"
+                                  : "liquid-glass text-white/90"}`}>
+              Last {v}
+            </button>
+          ))}
+          <span className="text-xs text-white/50 ml-2 font-body">
+            {reviews.length} review{reviews.length === 1 ? "" : "s"} in range
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+          <ChartCard icon={ICON_TREND} title="Code-Health Score" wide="lg:col-span-3"
+                     tags={["0–100", "Higher is better", "Per review", "Deterministic"]}>
+            <HealthChart reviews={reviews} />
+          </ChartCard>
+          <ChartCard icon={ICON_SHIELD} title="Findings by Severity" wide="lg:col-span-2"
+                     tags={["Stacked", "Critical → Info", "Per review"]}>
+            <SeverityChart reviews={reviews} />
+          </ChartCard>
+          <ChartCard icon={ICON_BARS} title="Findings by Agent"
+                     tags={["Selected range", "Totals"]}>
+            <AgentChart reviews={reviews} />
+          </ChartCard>
+          <ChartCard icon={ICON_LIST} title="Recent Reviews" wide="lg:col-span-3" id="reviews"
+                     tags={["Latest first", "Table view", "All values"]}>
+            <ReviewTable reviews={reviews} />
+          </ChartCard>
+        </div>
+      </div>
+    </section>
+  );
+}
+window.Analytics = Analytics;
+</script>
+
+<script type="text/babel" data-presets="react">
+/* ---------- app ---------- */
+function App() {
+  const [history, setHistory] = React.useState([]);
+  const [summary, setSummary] = React.useState(null);
+  const [range, setRange] = React.useState(50);
+  const [scanning, setScanning] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    try {
+      const [h, s] = await Promise.all([
+        fetch("/api/history?limit=100").then((r) => r.json()),
+        fetch("/api/summary").then((r) => r.json()),
+      ]);
+      setHistory(h.reviews || []);
+      setSummary(s);
+    } catch (e) { /* server offline — keep the previous render */ }
+  }, []);
+
+  React.useEffect(() => {
+    load();
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const runScan = async () => {
+    if (scanning) return;
+    setScanning(true);
+    try {
+      await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "sample_vulnerable_code" }),
+      });
+      await load();
+    } catch (e) { /* ignore; the poll will catch up */ }
+    setScanning(false);
+  };
+
+  return (
+    <React.Fragment>
+      <Hero summary={summary} onScan={runScan} scanning={scanning} />
+      <Analytics reviews={history.slice(-range)} range={range} setRange={setRange} />
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
