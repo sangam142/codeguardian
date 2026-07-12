@@ -1,0 +1,23 @@
+# --- Core runtime (needed to run the harness) ---
+langgraph>=0.2
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+bandit>=1.7
+python-dotenv>=1.0     # loads .env into the environment on startup
+
+# --- Optional: LLM triage + auto-fix proposals (Groq / Ollama / OpenAI) ---
+# The pipeline runs fine without this; install to enable explanations & fixes.
+openai>=1.30
+
+# --- Optional: vector retrieval for the Quality Agent's RAG layer ---
+# Without it (or without its embedding model) the RAG layer degrades to a
+# built-in keyword scorer — everything still works.
+chromadb>=0.5
+
+# --- Dev / CI ---
+pytest>=8.0
+
+# --- Upgrade path ---
+# semgrep        # multi-language static analysis
+# (PR-head checkout uses the system `git` binary — no extra package needed.)
